@@ -1,0 +1,126 @@
+---
+title: "Prediction-Assignment-Writeup"
+output: html_document
+date: "2022-10-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data
+
+### Data Cleaning and Preparation
+
+```{r}
+trainUrl <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+testUrl <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+train_in <- read.csv(trainUrl, header=T)
+validation <- read.csv(testUrl, header=T)
+```
+
+### Data Partitioning
+
+```{r}
+library(ggplot2)
+library(recipes)
+library(caret)
+```
+
+```{r}
+set.seed(111)
+training_sample <- createDataPartition(y=train_in$classe, p=0.7, list=FALSE)
+training <- train_in[training_sample, ]
+testing <- train_in[-training_sample, ]
+```
+
+### Identification on Non-Zero Data
+
+```{r}
+all_zero_colnames <- sapply(names(validation), function(x) all(is.na(validation[,x])==TRUE))
+nznames <- names(all_zero_colnames)[all_zero_colnames==FALSE]
+nznames <- nznames[-(1:7)]
+nznames <- nznames[1:(length(nznames)-1)]
+print(nznames)
+```
+
+## Model building
+
+The three model types that will be tested are:
+
+  1.  Decision trees with CART (rpart)
+
+  2.  Stochastic gradient boosting trees (gbm)
+
+  3.  Random forest decision trees (rf)
+
+```{r}
+library(gbm)
+library(randomForest)
+```
+
+### Cross validation
+
+```{r}
+fitControl <- trainControl(method='cv', number = 3)
+```
+
+```{r}
+model_cart <- train(
+  classe ~ ., 
+  data=training[, c('classe', nznames)],
+  trControl=fitControl,
+  method='rpart'
+)
+save(model_cart, file='./ModelFitCART.RData')
+model_gbm <- train(
+  classe ~ ., 
+  data=training[, c('classe', nznames)],
+  trControl=fitControl,
+  method='gbm'
+)
+save(model_gbm, file='./ModelFitGBM.RData')
+model_rf <- train(
+  classe ~ ., 
+  data=training[, c('classe', nznames)],
+  trControl=fitControl,
+  method='rf',
+  ntree=100
+)
+save(model_rf, file='./ModelFitRF.RData')
+```
+
+## Model Assessment (Out of sample error)
+
+```{r}
+predCART <- predict(model_cart, newdata=testing)
+cmCART <- confusionMatrix(predCART, as.factor(testing$classe))
+predGBM <- predict(model_gbm, newdata=testing)
+cmGBM <- confusionMatrix(predGBM, as.factor(testing$classe))
+predRF <- predict(model_rf, newdata=testing)
+cmRF <- confusionMatrix(predRF, as.factor(testing$classe))
+AccuracyResults <- data.frame(
+  Model = c('CART', 'GBM', 'RF'),
+  Accuracy = rbind(cmCART$overall[1], cmGBM$overall[1], cmRF$overall[1])
+)
+print(AccuracyResults)
+```
+
+```{r}
+print(cmRF)
+```
+
+Based on an assessment of these 3 model fits and out-of-sample results, it looks like both gradient boosting and random forests outperform the CART model, with random forests being slightly more accurate.
+
+##  Prediction
+
+The Random Forest model was applied to predict 20 different test cases.
+
+```{r}
+predRF_Test <- predict(model_rf, newdata=validation)
+predRF_Test
+```
+
+##  Conclusion
+
+The Random Forest classification model in combination with a couple of simple data preprocessing procedures (such as removing irrelevant data columns and standardizing) is turned out to be a great approach to predict the manner in which people did the exercise, using the given data from accelerometers on the belt, forearm, arm, and dumbell of participants.
